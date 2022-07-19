@@ -26,6 +26,10 @@ Parameters:
     Type: String
     Description: the CIDR IP block to assign to the public subnet which will contain build instance for EC2 Image Builder   
 
+  PublicRouteTableId:
+    Type: String
+    Description: Should be a route table id associated with public subnet. Should contain Internet Gateway
+   
 Resources:
 
   PublicSubnetForImgBuilder:
@@ -40,6 +44,13 @@ Resources:
       Tags:
         - Key: "Name"
           Value: "ec2-img-builder"
+
+
+  RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref PublicRouteTableId
+      SubnetId: !Ref PublicSubnetForImgBuilder
 
   ImageBuilderIamRole:
     Type: AWS::IAM::Role
@@ -251,7 +262,7 @@ Resources:
       SecurityGroupIds:
         - !Ref ImageBuilderSG
       SubnetId: !Ref PublicSubnetForImgBuilder
-      TerminateInstanceOnFailure: false
+      TerminateInstanceOnFailure: true
       InstanceTypes:
         - t3.medium
         - t3.large
