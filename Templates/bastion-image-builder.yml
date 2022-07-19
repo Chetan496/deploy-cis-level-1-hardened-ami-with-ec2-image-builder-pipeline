@@ -1,0 +1,301 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description:
+  This template will deploy a sample EC2 ImageBuilder pipeline that will generate an AmazonLinux2 AMI.
+
+Parameters:
+  EnvironmentPrefix:
+    Type: String
+    Description: >-
+      The values allowed for sandbox and dev.
+
+  ImageBuilderBucketName:
+    Type: String
+    Description: >-
+      Enter the Name of the bucket where ImageBuilder Config lives.
+
+  BaseInfraStackName:
+    Description: Stack name which has all of the VPC configuration
+    Type: String
+
+  VpcCidr:
+    Description: CIDR associated with the VPC
+    Type: String
+
+
+  CidrBlock:
+    Type: String
+    Description: the CIDR IP block to assign to the public subnet which will contain build instance for EC2 Image Builder   
+
+Resources:
+
+  PublicSubnetForImgBuilder:
+    Type: AWS::EC2::Subnet
+    Properties: 
+      CidrBlock: !Ref CidrBlock
+      MapPublicIpOnLaunch: true
+      PrivateDnsNameOptionsOnLaunch: "{\"EnableResourceNameDnsARecord\": true}"
+      VpcId: 
+        Fn::ImportValue: !Sub "${BaseInfraStackName}-VpcId"
+
+  ImageBuilderIamRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${EnvironmentPrefix}-img-builder-iam-role"
+      Description: 'This role will grant EC2 ImageBuilder minimum neccessary permissions to allow pipelines to execute'
+      MaxSessionDuration: 3600 # in seconds
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+                - ssm.amazonaws.com
+                - imagebuilder.amazonaws.com
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/EC2InstanceProfileForImageBuilder'
+        - 'arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore'
+      Policies:
+        - PolicyName: GrantS3Read
+          PolicyDocument:
+            Statement:
+              - Sid: GrantS3Read
+                Effect: Allow
+                Action:
+                  - s3:List*
+                  - s3:Get*
+                  - s3:Put*
+                Resource:
+                  - !Sub 'arn:aws:s3:::${ImageBuilderBucketName}:*'
+                  - !Sub 'arn:aws:s3:::${ImageBuilderBucketName}/*'
+        - PolicyName: DecryptKms
+          PolicyDocument:
+            Statement:
+              - Sid: DecryptKms
+                Effect: Allow
+                Action:
+                  - kms:Decrypt
+                  - kms:Encrypt
+                  - kms:GenerateDataKey*
+                  - ec2:DescribeImages
+                  - ssm:PutParameter
+                Resource: '*'
+        - PolicyName: GrantSsm
+          PolicyDocument:
+            Statement:
+              - Sid: GrantSsm
+                Effect: Allow
+                Action:
+                  - ssm:SendCommand
+                Resource:
+                  - 'arn:aws:ssm:eu-west-2::document/AmazonInspector-ManageAWSAgent'
+                  - !Sub 'arn:aws:ec2:eu-west-2:${AWS::AccountId}:*/*'
+        - PolicyName: Ec2Tags
+          PolicyDocument:
+            Statement:
+              - Sid: TagOnCreate
+                Effect: Allow
+                Action:
+                  - ec2:CreateTags
+                  - ec2:RunInstances
+                Resource: !Sub 'arn:aws:ec2:eu-west-2:${AWS::AccountId}:*/*'
+        - PolicyName: InspectorResource
+          PolicyDocument:
+            Statement:
+              - Sid: InspectorGroup
+                Effect: Allow
+                Action:
+                  - inspector:Create*
+                  - inspector:Get*
+                  - inspector:Describe*
+                  - inspector:List*
+                  - inspector:Set*
+                  - inspector:Start*
+                  - inspector:Stop*
+                  - inspector:PreviewAgents
+                Resource: '*'
+        - PolicyName: CFAndEC2ModifyPermissions
+          PolicyDocument:
+            Statement:
+              - Sid: CFAndEC2ModifyPermissions
+                Effect: Allow
+                Action:
+                  - cloudformation:SignalResource
+                  - ec2:ModifyInstanceAttribute
+                Resource: !Sub 'arn:aws:ec2:eu-west-2:${AWS::AccountId}:*/*'
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub '${EnvironmentPrefix}-EC2ImageBuilder-Profile'
+      Path: /
+      Roles:
+        - !Ref ImageBuilderIamRole 
+
+  ImageBuilderSG:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Linux EC2 Security Group
+      SecurityGroupIngress:
+        # below CIDR IPs are from S3 eu-west-2 endpoints
+        - IpProtocol: tcp
+          CidrIp: !Ref VpcCidr
+          FromPort: 8080
+          ToPort: 8080
+        - IpProtocol: tcp
+          CidrIp: "0.0.0.0/0"
+          FromPort: 443
+          ToPort: 443
+        - IpProtocol: tcp
+          CidrIp: "52.95.150.0/24"
+          FromPort: 443
+          ToPort: 443
+        - IpProtocol: tcp
+          CidrIp: "16.12.15.0/24"
+          FromPort: 443
+          ToPort: 443
+        - IpProtocol: tcp
+          CidrIp: "16.12.16.0/23"
+          FromPort: 443
+          ToPort: 443
+        - IpProtocol: tcp
+          CidrIp: "52.95.148.0/23"
+          FromPort: 443
+          ToPort: 443
+        - IpProtocol: tcp
+          CidrIp: "52.95.144.0/24"
+          FromPort: 443
+          ToPort: 443
+        - IpProtocol: tcp
+          CidrIp: "52.95.142.0/23"
+          FromPort: 443
+          ToPort: 443
+        - IpProtocol: tcp
+          CidrIp: "3.5.244.0/22"
+          FromPort: 443
+          ToPort: 443
+        - IpProtocol: tcp
+          CidrIp: "18.168.37.160/28"
+          FromPort: 443
+          ToPort: 443
+        - IpProtocol: tcp
+          CidrIp: "18.168.37.176/28"
+          FromPort: 443
+          ToPort: 443
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 0
+          ToPort: 65535
+          CidrIp: 0.0.0.0/0
+      VpcId:
+        Fn::ImportValue: !Sub "${BaseInfraStackName}-VpcId"
+
+  ResourceGroup:
+    Type: "AWS::Inspector::ResourceGroup"
+    Properties:
+      ResourceGroupTags:
+        - Key: "ResourceGroup"
+          Value: "Bastion"
+
+  AssessmentTarget:
+    Type: AWS::Inspector::AssessmentTarget
+    Properties:
+      AssessmentTargetName : "BastionAssessmentTarget"
+      ResourceGroupArn : !Ref ResourceGroup
+
+  Component:
+    Type: AWS::ImageBuilder::Component
+    Properties:
+      Name: !Sub '${EnvironmentPrefix}-LinuxCis-Component'
+      Platform: Linux
+      Version: 1.0.0
+      Description: 'This component will create an AMI with CIS level 1 playbook.'
+      ChangeDescription: 'Initial Version'
+      Tags:
+        build: helloworld
+      Uri: !Sub 's3://${ImageBuilderBucketName}/components/component-bastion.yml'
+
+  Recipe:
+    Type: AWS::ImageBuilder::ImageRecipe
+    Properties:
+      Name: !Sub '${EnvironmentPrefix}-LinuxCis-Recipe'
+      Description: 'This recipe will create an AMI based on AmazonLinux2 AMI and set the root drive to 50GB'
+      Version: 1.0.0
+      WorkingDirectory: "/workdir"
+      ParentImage: !Sub 'arn:aws:imagebuilder:${AWS::Region}:aws:image/amazon-linux-2-x86/x.x.x'
+      Components:
+        - ComponentArn: !Ref Component
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            DeleteOnTermination: true
+            VolumeSize: 50
+            VolumeType: gp2
+            Encrypted: true # use aws/ebs key so we can share across regions
+            # Iops: 300
+
+  Infrastructure:
+    Type: AWS::ImageBuilder::InfrastructureConfiguration
+    Properties:
+      Name: !Sub '${EnvironmentPrefix}-LinuxCis-Infrastructure'
+      Description: 'This infrastructure configuration will launch into our custom ImageBuilder VPC'
+      InstanceProfileName: !Ref InstanceProfile
+      SecurityGroupIds:
+        - !Ref ImageBuilderSG
+      SubnetId: !Ref PublicSubnetForImgBuilder
+      TerminateInstanceOnFailure: false
+      InstanceTypes:
+        - t3.medium
+        - t3.large
+      Logging:
+        S3Logs:
+          S3BucketName: !Ref ImageBuilderBucketName
+          S3KeyPrefix: 'bastion-imgbuilder'
+
+  Distribution:
+    Type: AWS::ImageBuilder::DistributionConfiguration
+    Properties:
+      Name: !Sub '${EnvironmentPrefix}-LinuxBastion-Distribution'
+      Description: 'This distribution configuration will deploy our AMI to the current region'
+      Distributions:
+        - Region: !Ref 'AWS::Region'
+          AmiDistributionConfiguration:
+            Name: !Sub '${EnvironmentPrefix}-LinuxBastion-{{ imagebuilder:buildDate }}' # the {{imagebuilder:buildDate}} variable is required in the output AMI name
+            AmiTags:
+              Name: !Sub '${EnvironmentPrefix}-LinuxBastion-Ami'
+
+  Pipeline:
+    Type: AWS::ImageBuilder::ImagePipeline
+    Properties:
+      Name: !Sub '${EnvironmentPrefix}-LinuxBastion-Pipeline'
+      Description: 'Deploys a sample AmazonLinux2 Ami to current region'
+      Status: ENABLED
+      ImageRecipeArn: !Ref Recipe
+      InfrastructureConfigurationArn: !Ref Infrastructure
+      DistributionConfigurationArn: !Ref Distribution
+      ImageTestsConfiguration:
+        ImageTestsEnabled: false
+        TimeoutMinutes: 60
+      Schedule:
+        ScheduleExpression: cron(0 5 1 * ? *)
+        PipelineExecutionStartCondition: 'EXPRESSION_MATCH_ONLY'
+
+# Uncomment this block if you want an initial AMI to be created during Stack Creation
+# Warning:  This can take between 30-90 minutes for the stack to finish completion
+# EC2 ImageBuilder Image
+#  IBImage:
+#    Type: AWS::ImageBuilder::Image
+#    Properties:
+#      ImageRecipeArn: !Ref Recipe
+#      InfrastructureConfigurationArn: !Ref Infrastructure
+#      DistributionConfigurationArn: !Ref Distribution
+#      ImageTestsConfiguration:
+#        ImageTestsEnabled: false
+#        TimeoutMinutes: 60
+#      Tags:
+#        ResourceGroup: 'Bastion'
