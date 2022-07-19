@@ -22,7 +22,6 @@ Parameters:
     Description: CIDR associated with the VPC
     Type: String
 
-
   CidrBlock:
     Type: String
     Description: the CIDR IP block to assign to the public subnet which will contain build instance for EC2 Image Builder   
@@ -37,6 +36,9 @@ Resources:
       PrivateDnsNameOptionsOnLaunch: "{\"EnableResourceNameDnsARecord\": true}"
       VpcId: 
         Fn::ImportValue: !Sub "${BaseInfraStackName}-VpcId"
+      Tags:
+        - Key: "Name"
+          Value: "ec2-img-builder"
 
   ImageBuilderIamRole:
     Type: AWS::IAM::Role
