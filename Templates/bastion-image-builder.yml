@@ -33,6 +33,8 @@ Resources:
     Properties: 
       CidrBlock: !Ref CidrBlock
       MapPublicIpOnLaunch: true
+      PrivateDnsNameOptionsOnLaunch:
+        EnableResourceNameDnsARecord: true 
       VpcId: 
         Fn::ImportValue: !Sub "${BaseInfraStackName}-VpcId"
       Tags:
